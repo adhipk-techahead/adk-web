@@ -5,7 +5,7 @@ import { ChatInterface } from '../components/ChatInterface';
 import { DebugPanel } from '../components/DebugPanel';
 import { SessionConfig, ApiCall, ConnectionStatus } from '../types';
 import { template, templateSessionConfig, TemplateType } from '../lib/template';
-import { randomUUID } from 'crypto';
+
 
 interface StateVariable {
   key: string;
@@ -84,7 +84,7 @@ export default function Home() {
     // Generate default values if not provided
     const sessionData = {
       userId: newSessionData.userId || template.userId,
-      sessionId: newSessionData.sessionId || randomUUID(),
+      sessionId: newSessionData.sessionId || crypto.randomUUID() as string,
       appName: newSessionData.appName || template.appName,
       state: stateJson
     };
