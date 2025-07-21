@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChatInterface } from '../components/ChatInterface';
 import { DebugPanel } from '../components/DebugPanel';
 import { SessionConfig, ApiCall, ConnectionStatus } from '../types';
-import template from '../template.json'; // This will work if using next/dynamic import or require, but for client-side, use fetch
+import { template, templateSessionConfig, TemplateType } from '../lib/template';
+import { randomUUID } from 'crypto';
 
 interface StateVariable {
   key: string;
@@ -12,22 +13,18 @@ interface StateVariable {
 }
 
 export default function Home() {
+  // Use template for initial values
   const [sessionConfig, setSessionConfig] = useState<SessionConfig | null>(null);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionState, setSessionState] = useState<Record<string, any>>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newSessionData, setNewSessionData] = useState<SessionConfig>({
-    userId: 'u_123',
-    sessionId: 's_123',
-    appName: 'multi_tool_agent',
-    initialState: '{}'
-  });
-  const [stateVariables, setStateVariables] = useState<StateVariable[]>([
-    { key: 'health_assessment_status', value: 'not_started' },
-    { key: 'hipaa_accepted', value: '' },
-    { key: 'health_assessment', value: '' },
-    { key: 'last_assesment_question', value: '' }
-  ]);
+  const [newSessionData, setNewSessionData] = useState<SessionConfig>({...templateSessionConfig});
+  const [stateVariables, setStateVariables] = useState<StateVariable[]>(
+    Object.entries(template.state).map(([key, value]) => ({
+      key,
+      value: typeof value === 'string' ? value : JSON.stringify(value)
+    }))
+  );
 
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [apiCalls, setApiCalls] = useState<ApiCall[]>([]);
@@ -35,32 +32,6 @@ export default function Home() {
   const [responseData, setResponseData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function loadTemplate() {
-      try {
-        const res = await fetch('/template.json');
-        if (!res.ok) throw new Error('Failed to load template.json');
-        const data = await res.json();
-        setNewSessionData((prev) => ({
-          ...prev,
-          userId: data.userId || 'u_123',
-          appName: data.appName || 'multi_tool_agent',
-        }));
-        if (data.state && typeof data.state === 'object') {
-          setStateVariables(
-            Object.entries(data.state).map(([key, value]) => ({
-              key,
-              value: typeof value === 'string' ? value : JSON.stringify(value)
-            }))
-          );
-        }
-      } catch (e) {
-        // fallback to defaults
-      }
-    }
-    loadTemplate();
-  }, []);
 
   // Add new state variable
   const addStateVariable = () => {
@@ -108,14 +79,14 @@ export default function Home() {
       }
     });
 
-    const initialStateJson = JSON.stringify(stateObject, null, 2);
+    const stateJson = JSON.stringify(stateObject, null, 2);
 
     // Generate default values if not provided
     const sessionData = {
-      userId: newSessionData.userId || 'u_123',
-      sessionId: newSessionData.sessionId || 's_123',
-      appName: newSessionData.appName || 'multi_tool_agent',
-      initialState: initialStateJson
+      userId: newSessionData.userId || template.userId,
+      sessionId: newSessionData.sessionId || randomUUID(),
+      appName: newSessionData.appName || template.appName,
+      state: stateJson
     };
 
     console.log('Creating session with data:', sessionData);
@@ -131,7 +102,7 @@ export default function Home() {
           userId: sessionData.userId,
           sessionId: sessionData.sessionId,
           appName: sessionData.appName,
-          state: JSON.parse(sessionData.initialState) || {}
+          state: JSON.parse(sessionData.state) || {}
         })
       });
 
@@ -151,25 +122,20 @@ export default function Home() {
       
       // Try to parse the initial state
       try {
-        const state = JSON.parse(sessionData.initialState);
+        const state = JSON.parse(sessionData.state);
         setSessionState(state);
       } catch {
         console.warn('Invalid session state JSON');
       }
 
       // Reset form and close modal
-      setNewSessionData({
-        userId: 'u_123',
-        sessionId: 's_123',
-        appName: 'multi_tool_agent',
-        initialState: '{}'
-      });
-      setStateVariables([
-        { key: 'health_assessment_status', value: 'not_started' },
-        { key: 'hipaa_accepted', value: '' },
-        { key: 'health_assessment', value: '' },
-        { key: 'last_assesment_question', value: '' }
-      ]);
+      setNewSessionData(templateSessionConfig);
+      setStateVariables(
+        Object.entries(template.state).map(([key, value]) => ({
+          key,
+          value: typeof value === 'string' ? value : JSON.stringify(value)
+        }))
+      );
       setShowCreateModal(false);
 
     } catch (error) {

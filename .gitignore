@@ -5,8 +5,8 @@ node_modules/
 .next/
 
 # Local env files
-.env*
-
+.env
+.env.local
 # OS files
 .DS_Store
 

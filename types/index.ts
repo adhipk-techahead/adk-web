@@ -2,7 +2,7 @@ export interface SessionConfig {
   userId: string;
   sessionId: string;
   appName: string;
-  initialState: string;
+  state: string;
 }
 
 export interface FunctionCall {
