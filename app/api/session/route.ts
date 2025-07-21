@@ -11,40 +11,56 @@ const DEFAULT_HEADERS = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, sessionId, state } = await request.json();
+    const { userId, sessionId, appName, state } = await request.json();
 
-    if (!userId || !sessionId || !state) {
+    console.log('Session API received:', { userId, sessionId, appName, state });
+
+    if (!userId || !sessionId || !appName || !state) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId, sessionId, or state' },
+        { error: 'Missing required fields: userId, sessionId, appName, or state' },
         { status: 400 }
       );
     }
 
     const startTime = Date.now();
-    const apiUrl = `${API_BASE_URL}/apps/multi_tool_agent/users/${userId}/sessions/${sessionId}`;
+    const apiUrl = `${API_BASE_URL}/apps/${appName}/users/${userId}/sessions/${sessionId}`;
     
+    const requestBody = state || {};
+    
+    console.log('Sending to session API:', { url: apiUrl, body: requestBody });
+
     const apiRequest = {
       method: 'POST',
       url: apiUrl,
       headers: DEFAULT_HEADERS,
-      body: JSON.stringify( {...state} ),
+      body: JSON.stringify(requestBody),
       timestamp: startTime
     };
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: DEFAULT_HEADERS,
-      body: JSON.stringify({ ...state })
+      body: JSON.stringify(requestBody)
     });
 
-    const responseBody = await response.json();
+    const responseBody = await response.text();
     const duration = Date.now() - startTime;
+
+    console.log('Session API response status:', response.status);
+    console.log('Session API response body:', responseBody);
+
+    let responseData;
+    try {
+      responseData = JSON.parse(responseBody);
+    } catch {
+      responseData = responseBody;
+    }
 
     const apiResponse = {
       status: response.status,
       statusText: response.statusText,
       headers: Object.fromEntries(response.headers.entries()),
-      body: responseBody,
+      body: responseData,
       timestamp: Date.now()
     };
 
@@ -56,21 +72,24 @@ export async function POST(request: NextRequest) {
     };
 
     if (!response.ok) {
+      console.error('Backend session API error:', response.status, response.statusText, responseBody);
       return NextResponse.json({
         success: false,
         error: `HTTP ${response.status}: ${response.statusText}`,
+        details: responseBody,
         apiCall
       }, { status: response.status });
     }
 
     return NextResponse.json({
       success: true,
-      data: responseBody,
+      data: responseData,
       apiCall
     });
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Session API error:', error);
     
     return NextResponse.json({
       success: false,
@@ -79,7 +98,7 @@ export async function POST(request: NextRequest) {
         id: Math.random().toString(36).substring(2, 15),
         request: {
           method: 'POST',
-          url: `${API_BASE_URL}/apps/agents/users/*/sessions/*`,
+          url: `${API_BASE_URL}/apps/*/users/*/sessions/*`,
           headers: DEFAULT_HEADERS,
           timestamp: Date.now()
         },

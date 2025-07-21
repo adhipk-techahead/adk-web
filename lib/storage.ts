@@ -45,6 +45,11 @@ class StorageService {
     return data ? JSON.parse(data) : null;
   }
 
+  clearSessionConfig(): void {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(this.SESSION_CONFIG_KEY);
+  }
+
   clearChatSession(userId: string, sessionId: string): void {
     if (typeof window === 'undefined') return;
     

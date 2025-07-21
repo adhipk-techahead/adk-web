@@ -11,11 +11,13 @@ const DEFAULT_HEADERS = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, sessionId, message } = await request.json();
+    const { userId, sessionId, appName, message, state } = await request.json();
 
-    if (!userId || !sessionId || !message) {
+    console.log('API received:', { userId, sessionId, appName, message, state });
+
+    if (!userId || !sessionId || !appName || !message) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId, sessionId, or message' },
+        { error: 'Missing required fields: userId, sessionId, appName, or message' },
         { status: 400 }
       );
     }
@@ -24,20 +26,23 @@ export async function POST(request: NextRequest) {
     const apiUrl = `${API_BASE_URL}/run`;
     
     const requestBody = {
-      appName: 'multi_tool_agent',
+      appName,
       userId,
       sessionId,
       newMessage: {
         role: 'user',
         parts: [{ text: message }]
-      }
+      },
+      state: state || {}
     };
+
+    console.log('Sending to API:', JSON.stringify(requestBody, null, 2));
 
     const apiRequest = {
       method: 'POST',
       url: apiUrl,
       headers: DEFAULT_HEADERS,
-      body: JSON.stringify(requestBody),
+      body: requestBody,
       timestamp: startTime
     };
 
@@ -49,6 +54,9 @@ export async function POST(request: NextRequest) {
 
     const responseBody = await response.text();
     const duration = Date.now() - startTime;
+
+    console.log('API response status:', response.status);
+    console.log('API response body:', responseBody);
 
     const apiResponse = {
       status: response.status,
@@ -66,31 +74,100 @@ export async function POST(request: NextRequest) {
     };
 
     if (!response.ok) {
+      console.error('Backend API error:', response.status, response.statusText, responseBody);
+      
+      // If it's a 500 error, provide a more helpful message
+      if (response.status === 500) {
+        return NextResponse.json({
+          success: false,
+          error: 'Backend service is currently unavailable. Please check if the backend server is running and properly configured.',
+          details: responseBody,
+          apiCall
+        }, { status: 503 });
+      }
+      
       return NextResponse.json({
         success: false,
         error: `HTTP ${response.status}: ${response.statusText}`,
+        details: responseBody,
         apiCall
       }, { status: response.status });
     }
 
-    // Try to parse the response to extract bot message
+    // Parse the response to extract structured data
     let botMessage = responseBody;
+    let responseMetadata = null;
+    let fullResponse = null;
+    let updatedState = null;
+    
     try {
       const responseData = JSON.parse(responseBody);
-      botMessage = responseData.message || responseData.response || responseBody;
+      
+      // Handle array response format (like the user's example)
+      if (Array.isArray(responseData) && responseData.length > 0) {
+        fullResponse = responseData;
+        
+        // Extract text from all responses for backward compatibility
+        const textParts = responseData
+          .filter((resp: any) => resp.content?.parts)
+          .map((resp: any) => 
+            resp.content.parts
+              .filter((part: any) => part.text)
+              .map((part: any) => part.text)
+              .join('')
+          )
+          .filter((text: string) => text.trim())
+          .join('\n\n');
+        
+        botMessage = textParts || 'No text content found';
+        
+        // Extract state updates from responses
+        const stateUpdates = responseData
+          .filter((resp: any) => resp.actions?.stateDelta)
+          .map((resp: any) => resp.actions.stateDelta);
+        
+        if (stateUpdates.length > 0) {
+          updatedState = { ...state, ...Object.assign({}, ...stateUpdates) };
+        }
+        
+        // Store metadata from the first response for developer interface
+        const firstResponse = responseData[0];
+        responseMetadata = {
+          fullResponse: responseData,
+          customMetadata: firstResponse.customMetadata,
+          usageMetadata: firstResponse.usageMetadata,
+          invocationId: firstResponse.invocationId,
+          author: firstResponse.author,
+          actions: firstResponse.actions,
+          id: firstResponse.id,
+          timestamp: firstResponse.timestamp
+        };
+      } else {
+        // Fallback for other response formats
+        botMessage = responseData.message || responseData.response || responseBody;
+        fullResponse = responseData;
+        updatedState = responseData.state || state;
+      }
     } catch {
       // Use raw response if not JSON
+      botMessage = responseBody;
     }
 
     return NextResponse.json({
       success: true,
-      data: responseBody,
+      data: {
+        message: botMessage,
+        state: updatedState || state
+      },
       botMessage,
+      fullResponse,
+      responseMetadata,
       apiCall
     });
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Chat API error:', error);
     
     return NextResponse.json({
       success: false,
