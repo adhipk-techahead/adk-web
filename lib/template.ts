@@ -9,7 +9,8 @@ const template = {
     health_assessment_status: 'not_started',
     hipaa_accepted: '',
     health_assessment: '',
-    last_assesment_question: ''
+    last_assesment_question: '',
+    health_interests:""
   }
 };
 const templateSessionConfig:SessionConfig = {...template,state:JSON.stringify(template.state)}

@@ -31,6 +31,8 @@ export interface Message {
   content: string;
   timestamp: number;
   parts?: MessagePart[];
+  streaming?: boolean;
+  options?: string[];
   // Enhanced metadata for multi-agent support
   author?: string;
   invocationId?: string;

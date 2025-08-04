@@ -1,23 +1,19 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, MessageCircle, Trash2, Download, Copy, ArrowRight, Zap, User, Bot, Code } from 'lucide-react';
+import { Send, MessageCircle, Trash2, Download, Copy, ArrowRight, Zap, User, Bot, Code, Wifi, WifiOff } from 'lucide-react';
 import { Message } from '../types';
 
 interface ChatInterfaceProps {
-  userId: string;
-  sessionId: string;
-  onSendMessage: (message: string) => void;
+  onSendMessage: (messages: any[]) => void;
   isLoading: boolean;
   isSessionActive: boolean;
   botMessage?: string;
-  responseData?: any[]; // Full response array from the API
-  error?: string; // Error message to display
+  responseData?: any[];
+  error?: string;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
-  userId,
-  sessionId,
   onSendMessage,
   isLoading,
   isSessionActive,
@@ -26,7 +22,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   error
 }) => {
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,66 +31,98 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   useEffect(() => {
     if (responseData && responseData.length > 0) {
-      // Process the full response array to handle multiple agents
-      processMultiAgentResponse(responseData);
+      console.log('Processing responseData:', responseData);
+      processStreamingResponse(responseData);
     } else if (botMessage) {
+      console.log('Adding bot message:', botMessage);
       addBotMessage(botMessage);
     }
   }, [responseData, botMessage]);
 
-  const processMultiAgentResponse = (responseArray: any[]) => {
-    const newMessages: Message[] = [];
+  const processStreamingResponse = (responseArray: any[]) => {
+    console.log('Processing streaming response:', responseArray);
     
-    responseArray.forEach((response, index) => {
+    responseArray.forEach((response) => {
       if (response.content?.parts) {
-        // Handle messages with parts (text, function calls, etc.)
         const textParts = response.content.parts
           .filter((part: any) => part.text)
           .map((part: any) => part.text)
           .join('');
         
-        if (textParts.trim()) {
-          const message: Message = {
-            id: response.id || `msg-${Date.now()}-${index}`,
-            role: 'assistant',
-            content: textParts,
-            timestamp: response.timestamp || Date.now(),
-            parts: response.content.parts,
-            author: response.author,
-            invocationId: response.invocationId,
-            actions: response.actions,
-            customMetadata: response.customMetadata,
-            usageMetadata: response.usageMetadata
-          };
-          newMessages.push(message);
-        }
-      } else if (response.content?.functionResponse) {
-        // Handle function responses
-        const message: Message = {
-          id: response.id || `func-${Date.now()}-${index}`,
-          role: 'assistant',
-          content: `Function ${response.content.functionResponse.name} completed`,
-          timestamp: response.timestamp || Date.now(),
-          parts: [{ functionResponse: response.content.functionResponse }],
-          author: response.author,
-          invocationId: response.invocationId
-        };
-        newMessages.push(message);
+        setMessages(prev => {
+          const existingMessageIndex = prev.findIndex(msg => msg.id === response.id);
+          
+          if (existingMessageIndex !== -1) {
+            // Update existing message
+            const updated = [...prev];
+            updated[existingMessageIndex] = {
+              ...updated[existingMessageIndex],
+              content: textParts,
+              parts: response.content.parts,
+              streaming: response.streaming,
+              options: response.options,
+              author: response.author,
+              invocationId: response.invocationId,
+              actions: response.actions,
+              customMetadata: response.customMetadata,
+              usageMetadata: response.usageMetadata
+            };
+            console.log('Updated existing message:', updated[existingMessageIndex]);
+            return updated;
+          } else {
+            // Add new message if it doesn't exist
+            const newMessage: Message = {
+              id: response.id || `msg-${Date.now()}`,
+              role: 'assistant',
+              content: textParts,
+              timestamp: response.timestamp || Date.now(),
+              parts: response.content.parts,
+              streaming: response.streaming,
+              options: response.options,
+              author: response.author,
+              invocationId: response.invocationId,
+              actions: response.actions,
+              customMetadata: response.customMetadata,
+              usageMetadata: response.usageMetadata
+            };
+            console.log('Adding new message:', newMessage);
+            return [...prev, newMessage];
+          }
+        });
       }
     });
+  };
 
-    if (newMessages.length > 0) {
-      setMessages(prev => [...prev, ...newMessages]);
-    }
+  const handleOptionClick = (option: string) => {
+    console.log('Option clicked:', option);
+    
+    // Create a user message with the selected option
+    const userMessage: Message = {
+      id: Math.random().toString(36).substring(2, 15),
+      role: 'user',
+      content: option,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    
+    // Send the option as a message
+    const allMessages = messages.concat(userMessage).map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+    onSendMessage(allMessages);
   };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage || !isSessionActive) return;
+
+    console.log('Sending message:', trimmedMessage);
 
     const userMessage: Message = {
       id: Math.random().toString(36).substring(2, 15),
@@ -103,9 +131,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       timestamp: Date.now()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => {
+      const updated = [...prev, userMessage];
+      console.log('Added user message, updated messages:', updated);
+      return updated;
+    });
     setMessage('');
-    onSendMessage(trimmedMessage);
+
+    console.log('Calling onSendMessage...');
+    const allMessages = messages.concat(userMessage).map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+    onSendMessage(allMessages);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -116,14 +154,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
 
   const addBotMessage = (content: string) => {
-    const botMessage: Message = {
-      id: Math.random().toString(36).substring(2, 15),
-      role: 'assistant',
-      content,
-      timestamp: Date.now()
-    };
+    console.log('Adding bot message with content:', content);
+    
+    setMessages(prev => {
+      const botMessage: Message = {
+        id: Math.random().toString(36).substring(2, 15),
+        role: 'assistant',
+        content,
+        timestamp: Date.now()
+      };
 
-    setMessages(prev => [...prev, botMessage]);
+      const updated = [...prev, botMessage];
+      console.log('Updated messages after adding bot message:', updated);
+      return updated;
+    });
   };
 
   const clearChatHistory = () => {
@@ -132,8 +176,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const exportChatHistory = () => {
     const chatData = {
-      userId,
-      sessionId,
       messages,
       exportedAt: new Date().toISOString()
     };
@@ -142,12 +184,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `chat-history-${userId}-${sessionId}-${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `chat-history-${new Date().toISOString().split('T')[0]}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
-  const copyMessageToClipboard = (content: string) => {
+  const copyMessageToClipboard = (msg: any) => {
+    let content = '';
+    if (msg.content?.parts) {
+      content = msg.content.parts
+        .filter((part: any) => part.text)
+        .map((part: any) => part.text)
+        .join('');
+    } else if (typeof msg.content === 'string') {
+      content = msg.content;
+    }
     navigator.clipboard.writeText(content);
   };
 
@@ -155,74 +206,41 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     return new Date(timestamp).toLocaleTimeString();
   };
 
-  const renderMessageContent = (msg: Message) => {
+  const renderMessageContent = (msg: any) => {
+    let content = '';
+    if (msg.content?.parts) {
+      content = msg.content.parts
+        .filter((part: any) => part.text)
+        .map((part: any) => part.text)
+        .join('');
+    } else if (typeof msg.content === 'string') {
+      content = msg.content;
+    }
+
     return (
       <div className="space-y-2">
-        {/* Main text content */}
-        <p className="whitespace-pre-wrap text-sm break-words overflow-wrap-anywhere hyphens-auto" style={{ wordBreak: 'break-word' }}>{msg.content}</p>
+        <p className="whitespace-pre-wrap text-sm break-words overflow-wrap-anywhere hyphens-auto" style={{ wordBreak: 'break-word' }}>
+          {content}
+          {msg.streaming && (
+            <span className="inline-flex items-center ml-1">
+              <span className="animate-pulse">▋</span>
+            </span>
+          )}
+        </p>
         
-        {/* Function calls */}
-        {msg.parts?.map((part, index) => {
-          if (part.functionCall) {
-            return (
-              <div key={index} className="bg-blue-900/50 border border-blue-700 rounded p-2 mt-2 min-w-0">
-                <div className="flex items-center gap-2 text-blue-300 font-medium text-xs">
-                  <Code className="w-3 h-3" />
-                  Function Call: {part.functionCall.name}
-                </div>
-                <pre className="text-xs text-blue-200 mt-1 overflow-x-auto break-words whitespace-pre-wrap">
-                  {JSON.stringify(part.functionCall.args, null, 2)}
-                </pre>
-              </div>
-            );
-          }
-          if (part.functionResponse) {
-            return (
-              <div key={index} className="bg-green-900/50 border border-green-700 rounded p-2 mt-2 min-w-0">
-                <div className="flex items-center gap-2 text-green-300 font-medium text-xs">
-                  <ArrowRight className="w-3 h-3" />
-                  Function Response: {part.functionResponse.name}
-                </div>
-                <pre className="text-xs text-green-200 mt-1 overflow-x-auto break-words whitespace-pre-wrap">
-                  {JSON.stringify(part.functionResponse.response, null, 2)}
-                </pre>
-              </div>
-            );
-          }
-          return null;
-        })}
-
-        {/* Agent transfer */}
-        {msg.actions?.transferToAgent && (
-          <div className="bg-purple-900/50 border border-purple-700 rounded p-2 mt-2 min-w-0">
-            <div className="flex items-center gap-2 text-purple-300 font-medium text-xs">
-              <ArrowRight className="w-3 h-3" />
-              Transferred to: {msg.actions.transferToAgent}
-            </div>
-          </div>
-        )}
-
-        {/* State changes */}
-        {msg.actions?.stateDelta && Object.keys(msg.actions.stateDelta).length > 0 && (
-          <div className="bg-yellow-900/50 border border-yellow-700 rounded p-2 mt-2 min-w-0">
-            <div className="flex items-center gap-2 text-yellow-300 font-medium text-xs">
-              <Zap className="w-3 h-3" />
-              State Updated
-            </div>
-            <pre className="text-xs text-yellow-200 mt-1 overflow-x-auto break-words whitespace-pre-wrap">
-              {JSON.stringify(msg.actions.stateDelta, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {/* Agent info */}
-        {msg.author && (
-          <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
-            <Bot className="w-3 h-3" />
-            {msg.author}
-            {msg.invocationId && (
-              <span className="text-gray-500">({msg.invocationId.slice(0, 8)}...)</span>
-            )}
+        {/* Render options as clickable bubbles */}
+        {msg.options && msg.options.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {msg.options.map((option: string, index: number) => (
+              <button
+                key={index}
+                onClick={() => handleOptionClick(option)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-full transition-colors duration-200 hover:scale-105 transform"
+                disabled={isLoading}
+              >
+                {option}
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -237,11 +255,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="flex items-center gap-3">
             <MessageCircle className="w-5 h-5 text-blue-400" />
             <div>
-              <h2 className="text-sm font-semibold text-white">Chat Session</h2>
+              <h2 className="text-sm font-semibold text-white">Chat Interface</h2>
               <div className="flex items-center gap-2 text-xs text-gray-400">
-                <span>User: {userId}</span>
-                <span>•</span>
-                <span>Session: {sessionId}</span>
+                <span>Health Assistant</span>
               </div>
             </div>
           </div>
@@ -276,9 +292,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <span className="font-medium">Error</span>
             </div>
             <p className="text-red-300 text-sm">{error}</p>
-            <p className="text-red-400 text-xs mt-2">
-              Please check if the backend service is running and properly configured.
-            </p>
           </div>
         )}
         
@@ -288,50 +301,53 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <p className="text-sm">No messages yet. Start a conversation!</p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex gap-3 w-full ${
-                msg.role === 'user' ? 'justify-end' : 'justify-start'
-              }`}
-            >
-              {msg.role === 'assistant' && (
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Bot className="w-4 h-4 text-white" />
-                </div>
-              )}
-              
+          messages.map((msg, index) => {
+            console.log(`Rendering message ${index}:`, msg);
+            return (
               <div
-                className={`max-w-[85%] sm:max-w-[75%] md:max-w-[70%] min-w-0 rounded-lg p-3 ${
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-100'
+                key={msg.id}
+                className={`flex gap-3 w-full ${
+                  msg.role === 'user' ? 'justify-end' : 'justify-start'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2 min-w-0">
-                  <div className="flex-1 min-w-0">
-                    {renderMessageContent(msg)}
+                {msg.role === 'assistant' && (
+                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-4 h-4 text-white" />
                   </div>
-                  <button
-                    onClick={() => copyMessageToClipboard(msg.content)}
-                    className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors flex-shrink-0"
-                    title="Copy message"
-                  >
-                    <Copy className="w-3 h-3" />
-                  </button>
+                )}
+                
+                <div
+                  className={`max-w-[85%] sm:max-w-[75%] md:max-w-[70%] min-w-0 rounded-lg p-3 ${
+                    msg.role === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="flex-1 min-w-0">
+                      {renderMessageContent(msg)}
+                    </div>
+                    <button
+                      onClick={() => copyMessageToClipboard(msg)}
+                      className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded transition-colors flex-shrink-0"
+                      title="Copy message"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-2">
+                    {formatTimestamp(msg.timestamp)}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-400 mt-2">
-                  {formatTimestamp(msg.timestamp)}
-                </div>
-              </div>
 
-              {msg.role === 'user' && (
-                <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-              )}
-            </div>
-          ))
+                {msg.role === 'user' && (
+                  <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
