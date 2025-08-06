@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://13.202.181.105:8002';
+const API_BASE_URL = process.env.API_BASE_URL || 'http://13.202.181.105:8002';
 const DEFAULT_HEADERS = {
   'Accept': '*/*',
   'Accept-Encoding': 'gzip, deflate, br',
